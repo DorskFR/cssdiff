@@ -6,5 +6,5 @@ pub mod report;
 pub mod site;
 
 pub use diff::{Change, PageDiff, Side, Unmatched, diff_page};
-pub use page::Size;
+pub use page::{Size, State};
 pub use property::{Mode, Property};

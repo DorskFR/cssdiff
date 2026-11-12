@@ -112,10 +112,16 @@ impl Report {
     pub fn to_text(&self) -> String {
         let mut out = String::new();
         let viewports = |v: &[String]| {
-            if v.len() == self.viewports.len() {
-                "all viewports".to_string()
-            } else {
-                v.join(", ")
+            let state = v[0].find(':').map_or("", |i| &v[0][i..]);
+            let all = v.len() == self.viewports.len()
+                && self
+                    .viewports
+                    .iter()
+                    .all(|s| v.contains(&format!("{s}{state}")));
+            match (all, state) {
+                (true, "") => "all viewports".to_string(),
+                (true, state) => format!("all viewports, {state} only"),
+                _ => v.join(", "),
             }
         };
         for p in &self.only_before {

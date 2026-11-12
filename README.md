@@ -60,6 +60,14 @@ cssdiff --mode used before/ after/
 
 `--mode used` returns what `getComputedStyle()` returns: `width`, `height`, margins, padding and insets as laid-out pixels.
 
+### Check interaction states
+
+```sh
+cssdiff --hover --focus --active before/ after/
+```
+
+Each flag adds a pass with that state forced on every element at once. Changes that appear only in that pass are reported as `:hover only` (`1440x900:hover` in JSON).
+
 ## Configuration
 
 | Option | Default | Effect |
@@ -68,6 +76,7 @@ cssdiff --mode used before/ after/
 | `-b, --base` | none | URL prefix stripped from root-relative links |
 | `-p, --property` / `-i, --ignore` | all 249 physical longhands | Properties compared |
 | `-m, --mode` | `computed` | `computed` or `used` values |
+| `--hover`, `--focus`, `--active` | off | Also compare with that state forced on every element |
 | `-j, --jobs` | CPU count | Pages processed in parallel |
 
 The full list is in `cssdiff --help`.
@@ -81,7 +90,8 @@ On 24 random CSS edits to a real 28-page site, cssdiff found all 549 non-layout 
 ## Limitations
 
 - No JavaScript runs. Client-rendered pages need a pre-rendered build (SSR or static export).
-- `:hover`, `:focus` and other interaction states are not forced.
+- States are forced on every element at once: `:not(:hover)` never matches, and competing state rules on nested elements can mask each other.
+- `:focus-visible` and `:focus-within` never match.
 - Values follow Firefox's engine; a feature Stylo lacks is invisible on both sides.
 - `--mode used` lays out without system fonts: text-dependent sizes differ from a browser but stay deterministic.
 

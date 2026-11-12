@@ -379,3 +379,84 @@ fn changes_are_reported_in_document_order() {
         vec!["html > body > main.m", "html > body > main.m > p.p"]
     );
 }
+
+#[test]
+fn hover_rules_are_compared_with_hover() {
+    let html = page("<div class=card><a class=t>x</a></div>");
+    let before = ".t{color:black}.card:hover .t{color:red}";
+    let after = ".t{color:black}.card:hover .t{color:blue}";
+    let run = compare(
+        &html,
+        before,
+        after,
+        &["-p", "color", "-v", "1000x800", "--hover"],
+    );
+    assert_eq!(run.code, 1);
+    assert_eq!(
+        changes(&run),
+        vec![(
+            "html > body > div.card > a.t".into(),
+            "color".into(),
+            "rgb(255, 0, 0)".into(),
+            "rgb(0, 0, 255)".into(),
+            vec!["1000x800:hover".into()]
+        )]
+    );
+
+    let default = compare(&html, before, after, &["-p", "color"]);
+    assert_eq!(default.code, 0, "{:?}", changes(&default));
+}
+
+#[test]
+fn focus_and_active_rules_are_compared_with_their_flags() {
+    let html = page("<button class=b>x</button>");
+    let before = ".b:focus{outline-style:solid}.b:active{opacity:.5}";
+    let after = ".b:focus{outline-style:dashed}.b:active{opacity:.7}";
+    let args = ["-p", "outline-style,opacity", "-v", "1000x800"];
+
+    let focus = compare(&html, before, after, &[&args[..], &["--focus"]].concat());
+    assert_eq!(
+        changes(&focus),
+        vec![(
+            "html > body > button.b".into(),
+            "outline-style".into(),
+            "solid".into(),
+            "dashed".into(),
+            vec!["1000x800:focus".into()]
+        )]
+    );
+
+    let active = compare(&html, before, after, &[&args[..], &["--active"]].concat());
+    assert_eq!(
+        changes(&active),
+        vec![(
+            "html > body > button.b".into(),
+            "opacity".into(),
+            "0.5".into(),
+            "0.7".into(),
+            vec!["1000x800:active".into()]
+        )]
+    );
+}
+
+#[test]
+fn changes_without_a_state_are_not_repeated_under_one() {
+    let run = compare(
+        &page("<p class=a>x</p>"),
+        ".a{color:red}",
+        ".a{color:blue}",
+        &[
+            "-p", "color", "-v", "1000x800", "--hover", "--focus", "--active",
+        ],
+    );
+    assert_eq!(
+        changes(&run),
+        vec![(
+            "html > body > p.a".into(),
+            "color".into(),
+            "rgb(255, 0, 0)".into(),
+            "rgb(0, 0, 255)".into(),
+            vec!["1000x800".into()]
+        )]
+    );
+}

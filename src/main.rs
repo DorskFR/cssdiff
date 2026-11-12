@@ -9,7 +9,7 @@ use clap::Parser;
 
 use cssdiff::diff::{Sources, diff_page};
 use cssdiff::report::{PageReport, Report};
-use cssdiff::{Mode, Size, property, site};
+use cssdiff::{Mode, Size, State, property, site};
 
 /// Compare the computed styles of every element of two versions of a page or
 /// site, at every viewport, without a browser.
@@ -48,6 +48,15 @@ struct Cli {
     /// Which values to compare
     #[arg(short, long, value_enum, default_value_t = Mode::Computed)]
     mode: Mode,
+    /// Also compare with `:hover` forced on every element
+    #[arg(long)]
+    hover: bool,
+    /// Also compare with `:focus` forced on every element
+    #[arg(long)]
+    focus: bool,
+    /// Also compare with `:active` forced on every element
+    #[arg(long)]
+    active: bool,
     /// Print the report as JSON
     #[arg(long)]
     json: bool,
@@ -90,6 +99,15 @@ fn run(cli: Cli) -> Result<bool> {
         .filter(|p| !cli.ignore.iter().any(|q| q == p.name))
         .collect();
 
+    let states: Vec<State> = [
+        (cli.hover, State::Hover),
+        (cli.focus, State::Focus),
+        (cli.active, State::Active),
+    ]
+    .into_iter()
+    .filter_map(|(on, state)| on.then_some(state))
+    .collect();
+
     let plan = site::plan(before, after)?;
     let sources = Sources {
         before_root: &plan.before_root,
@@ -117,8 +135,16 @@ fn run(cli: Cli) -> Result<bool> {
                     } else {
                         format!("{} → {}", b.display(), a.display())
                     };
-                    let result = diff_page(&sources, b, a, &cli.viewports, &properties, cli.mode)
-                        .map(|d| Report::page(name, d));
+                    let result = diff_page(
+                        &sources,
+                        b,
+                        a,
+                        &cli.viewports,
+                        &properties,
+                        cli.mode,
+                        &states,
+                    )
+                    .map(|d| Report::page(name, d));
                     results.lock().unwrap()[i] = Some(result);
                 }
             });
