@@ -62,6 +62,77 @@ impl NetProvider for FileNetProvider {
     }
 }
 
+/// Fetches `http://` URLs. A failed stylesheet is reported and loads empty,
+/// like a missing local file.
+pub struct HttpNetProvider {
+    agent: ureq::Agent,
+    warnings: Arc<Mutex<Vec<String>>>,
+}
+
+impl HttpNetProvider {
+    pub fn new(agent: ureq::Agent) -> (Self, Arc<Mutex<Vec<String>>>) {
+        let warnings = Arc::new(Mutex::new(Vec::new()));
+        (
+            Self {
+                agent,
+                warnings: warnings.clone(),
+            },
+            warnings,
+        )
+    }
+}
+
+impl NetProvider for HttpNetProvider {
+    fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        let url = request.url.to_string();
+        let body = match get(&self.agent, &url) {
+            Ok((200..=299, body, _)) => body,
+            Ok((status, _, _)) => {
+                if looks_like_stylesheet(&request.url) {
+                    self.warnings
+                        .lock()
+                        .unwrap()
+                        .push(format!("HTTP {status}: {url}"));
+                }
+                Vec::new()
+            }
+            Err(e) => {
+                if looks_like_stylesheet(&request.url) {
+                    self.warnings.lock().unwrap().push(e);
+                }
+                Vec::new()
+            }
+        };
+        handler.bytes(url, Bytes::from(body));
+    }
+}
+
+/// `(status, body, final url after redirects)`
+pub fn get(agent: &ureq::Agent, url: &str) -> Result<(u16, Vec<u8>, String), String> {
+    use ureq::ResponseExt;
+    let mut response = agent
+        .get(url)
+        .call()
+        .map_err(|e| format!("GET {url}: {e}"))?;
+    let status = response.status().as_u16();
+    let final_url = response.get_uri().to_string();
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(64 * 1024 * 1024)
+        .read_to_vec()
+        .map_err(|e| format!("GET {url}: {e}"))?;
+    Ok((status, body, final_url))
+}
+
+pub fn agent(timeout: std::time::Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .http_status_as_error(false)
+        .build()
+        .into()
+}
+
 fn looks_like_stylesheet(url: &blitz_traits::net::Url) -> bool {
     match url.scheme() {
         "data" => url.path().starts_with("text/css"),

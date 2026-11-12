@@ -54,6 +54,50 @@ pub fn plan(before: &Path, after: &Path) -> Result<Plan> {
     }
 }
 
+/// Compare the same routes on two servers.
+pub fn plan_routes(routes: &[String]) -> Plan {
+    Plan {
+        before_root: PathBuf::new(),
+        after_root: PathBuf::new(),
+        pairs: routes
+            .iter()
+            .map(|r| (PathBuf::from(r), PathBuf::from(r)))
+            .collect(),
+        only_before: vec![],
+        only_after: vec![],
+    }
+}
+
+/// Expand `--routes` values: an existing file lists one route per line (`#`
+/// starts a comment); anything else is a route and must start with `/`.
+pub fn routes(values: &[String]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for v in values {
+        if !Path::new(v).is_file() {
+            if !v.starts_with('/') {
+                bail!("route {v:?} must start with / (or name an existing routes file)");
+            }
+            out.push(v.clone());
+            continue;
+        }
+        let text = std::fs::read_to_string(v)
+            .map_err(|e| anyhow::anyhow!("reading routes file {v}: {e}"))?;
+        for line in text.lines() {
+            let line = line.split('#').next().unwrap_or("").trim();
+            if line.is_empty() {
+                continue;
+            }
+            if !line.starts_with('/') {
+                bail!("route {line:?} in {v} must start with /");
+            }
+            out.push(line.to_string());
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|r| seen.insert(r.clone()));
+    Ok(out)
+}
+
 fn html_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];

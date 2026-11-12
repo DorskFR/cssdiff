@@ -19,6 +19,8 @@ pub struct Report {
 #[derive(Debug, Serialize)]
 pub struct PageReport {
     pub page: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<(u16, u16)>,
     pub elements: usize,
     pub changes: Vec<GroupedChange>,
     pub unmatched: Vec<GroupedUnmatched>,
@@ -51,7 +53,7 @@ impl Report {
             || self
                 .pages
                 .iter()
-                .any(|p| !p.changes.is_empty() || !p.unmatched.is_empty())
+                .any(|p| p.status.is_some() || !p.changes.is_empty() || !p.unmatched.is_empty())
     }
 
     pub fn page(page: String, diff: PageDiff) -> PageReport {
@@ -77,6 +79,7 @@ impl Report {
         }
         PageReport {
             page,
+            status: diff.status,
             elements: diff.elements,
             changes: order
                 .into_iter()
@@ -131,10 +134,13 @@ impl Report {
             writeln!(out, "+ {p}: page only in after").unwrap();
         }
         for page in &self.pages {
-            if page.changes.is_empty() && page.unmatched.is_empty() {
+            if page.status.is_none() && page.changes.is_empty() && page.unmatched.is_empty() {
                 continue;
             }
             writeln!(out, "{}", page.page).unwrap();
+            if let Some((b, a)) = page.status {
+                writeln!(out, "  HTTP status {b} → {a}").unwrap();
+            }
             for u in &page.unmatched {
                 let (sign, side) = match u.only_in {
                     Side::Before => ('-', "before"),
