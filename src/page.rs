@@ -45,6 +45,33 @@ impl std::str::FromStr for Size {
     }
 }
 
+/// A user-action pseudo-class that can be forced on every element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Hover,
+    Focus,
+    Active,
+}
+
+impl State {
+    fn flags(self) -> stylo_dom::ElementState {
+        use stylo_dom::ElementState as S;
+        match self {
+            State::Hover => S::HOVER,
+            State::Focus => S::FOCUS,
+            State::Active => S::ACTIVE,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            State::Hover => ":hover",
+            State::Focus => ":focus",
+            State::Active => ":active",
+        }
+    }
+}
+
 pub struct Page {
     pub doc: BaseDocument,
     pub warnings: Vec<String>,
@@ -99,6 +126,31 @@ impl Page {
         self.doc.resolve(0.0);
         self.warnings
             .extend(self.fetch_warnings.lock().unwrap().drain(..));
+    }
+
+    /// Set (or clear) `state` on every element at once, then restyle.
+    pub fn force_state(&mut self, state: State, on: bool) {
+        let flags = state.flags();
+        let mut ids = Vec::new();
+        let mut stack = vec![self.doc.root_node().id];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.doc.get_node(id) else {
+                continue;
+            };
+            if node.is_element() {
+                ids.push(id);
+            }
+            stack.extend(node.children.iter().copied());
+        }
+        for id in ids {
+            self.doc.snapshot_node_and(id, flags, |node| {
+                if let Some(data) = node.element_data_mut() {
+                    data.element_state.set(flags, on);
+                }
+                node.mark_ancestors_dirty();
+            });
+        }
+        self.doc.resolve(0.0);
     }
 
     pub fn entries(&self) -> Vec<Entry> {

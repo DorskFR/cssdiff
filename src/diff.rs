@@ -5,7 +5,7 @@ use std::rc::Rc;
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::page::{Page, Size};
+use crate::page::{Page, Size, State};
 use crate::property::{Mode, Property};
 use blitz_dom::NodeId;
 use style::properties::{ComputedValues, PropertyDeclarationId};
@@ -67,17 +67,37 @@ pub fn diff_page(
     viewports: &[Size],
     properties: &[Property],
     mode: Mode,
+    states: &[State],
 ) -> Result<PageDiff> {
     let mut before = Page::load(sources.before_root, sources.base, before_rel)?;
     let mut after = Page::load(sources.after_root, sources.base, after_rel)?;
     let mut out = PageDiff::default();
 
-    for &size in viewports {
+    let passes: Vec<(Size, Option<State>)> = viewports
+        .iter()
+        .flat_map(|&s| {
+            std::iter::once((s, None)).chain(states.iter().map(move |&st| (s, Some(st))))
+        })
+        .collect();
+    // Changes already seen without a forced state are not repeated under one.
+    let mut base: std::collections::HashSet<(String, String, String, String)> = Default::default();
+    for (size, state) in passes {
+        let forced = state.is_some();
+        if !forced {
+            base.clear();
+        }
         before.resolve_at(size);
         after.resolve_at(size);
+        if let Some(state) = state {
+            before.force_state(state, true);
+            after.force_state(state, true);
+        }
         let mut before_cache = ValueCache::default();
         let mut after_cache = ValueCache::default();
-        let viewport = size.to_string();
+        let viewport = match state {
+            Some(state) => format!("{size}{}", state.name()),
+            None => size.to_string(),
+        };
         let before_entries = before.entries();
         let after_entries = after.entries();
         out.elements = out.elements.max(before_entries.len());
@@ -87,6 +107,9 @@ pub fn diff_page(
 
         for (order, b) in before_entries.iter().enumerate() {
             let Some(a) = after_by_key.remove(b.key.as_str()) else {
+                if forced {
+                    continue;
+                }
                 out.unmatched.push(Unmatched {
                     element: b.label.clone(),
                     path: b.key.clone(),
@@ -96,6 +119,19 @@ pub fn diff_page(
                 continue;
             };
             let mut push = |property: Property, before: String, after: String| {
+                let id = (
+                    a.key.clone(),
+                    property.name.to_string(),
+                    before.clone(),
+                    after.clone(),
+                );
+                if forced {
+                    if base.contains(&id) {
+                        return;
+                    }
+                } else {
+                    base.insert(id);
+                }
                 out.changes.push(Change {
                     element: a.label.clone(),
                     path: a.key.clone(),
@@ -131,7 +167,7 @@ pub fn diff_page(
             }
         }
         for a in &after_entries {
-            if after_by_key.contains_key(a.key.as_str()) {
+            if !forced && after_by_key.contains_key(a.key.as_str()) {
                 out.unmatched.push(Unmatched {
                     element: a.label.clone(),
                     path: a.key.clone(),
@@ -139,6 +175,10 @@ pub fn diff_page(
                     viewport: viewport.clone(),
                 });
             }
+        }
+        if let Some(state) = state {
+            before.force_state(state, false);
+            after.force_state(state, false);
         }
     }
 
