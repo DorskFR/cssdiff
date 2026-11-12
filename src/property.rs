@@ -21,7 +21,9 @@ pub struct Property {
 pub fn all() -> Vec<Property> {
     // Blitz enables Stylo prefs (grid, columns, writing-mode…) when it creates
     // a document; properties behind them are unknown until then.
-    drop(blitz_dom::BaseDocument::new(blitz_dom::DocumentConfig::default()));
+    drop(blitz_dom::BaseDocument::new(
+        blitz_dom::DocumentConfig::default(),
+    ));
     blitz_dom::resolved_style_property_names()
         .iter()
         .filter_map(|&name| {

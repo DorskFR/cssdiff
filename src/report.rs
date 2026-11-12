@@ -5,6 +5,9 @@ use serde::Serialize;
 
 use crate::diff::{PageDiff, Side};
 
+/// `(element, property, before, after, path)`
+type ChangeKey = (String, String, String, String, String);
+
 #[derive(Debug, Serialize)]
 pub struct Report {
     pub viewports: Vec<String>,
@@ -52,9 +55,8 @@ impl Report {
     }
 
     pub fn page(page: String, diff: PageDiff) -> PageReport {
-        let mut changes: BTreeMap<(String, String, String, String, String), Vec<String>> =
-            BTreeMap::new();
-        let mut order: Vec<(usize, (String, String, String, String, String))> = Vec::new();
+        let mut changes: BTreeMap<ChangeKey, Vec<String>> = BTreeMap::new();
+        let mut order: Vec<(usize, ChangeKey)> = Vec::new();
         for c in diff.changes {
             let key = (c.element, c.property, c.before, c.after, c.path);
             if !changes.contains_key(&key) {
