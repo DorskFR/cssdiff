@@ -1,0 +1,16 @@
+:root { --brand: #0b5fff; --muted: #57606a; --space: 16px; }
+body { margin: 0; font-family: system-ui, sans-serif; color: #1f2328; }
+.header { display: flex; justify-content: space-between; padding: 12px var(--space); background: var(--brand); }
+.header a { color: white; text-decoration: none; margin-left: 12px; }
+.brand { font-weight: bold; }
+.page { padding: var(--space); }
+.intro { font-size: 1.125rem; color: var(--muted); }
+.btn { display: inline-block; padding: .5rem .875rem; border-radius: 6px; background: var(--brand); color: white; }
+.tiers { display: grid; grid-template-columns: 1fr; gap: 12px; list-style: none; padding: 0; }
+.tier { border: 1px solid #d0d7de; border-radius: 8px; padding: var(--space); }
+.tier--featured { border-color: var(--brand); }
+.footer { padding: var(--space); color: var(--muted); font-size: .875rem; }
+@media (min-width: 48rem) {
+  .page { padding: calc(var(--space) * 2) 48px; }
+  .tiers { grid-template-columns: repeat(3, 1fr); }
+}
