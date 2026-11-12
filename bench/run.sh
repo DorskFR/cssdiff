@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Validate cssdiff against Chrome and time both on every mutation in work/.
-# usage: bench/run.sh <site-dir> <base>
+# usage: bench/run.sh <site-dir> <base> [mut-NN ...]
+# RESULTS=path overrides the results file (default work/results.tsv).
 set -euo pipefail
 cd "$(dirname "$0")"
 site=$1 base=$2
+shift 2
+results=${RESULTS:-work/results.tsv}
+if (( $# )); then dirs=("${@/#/work/}"); else dirs=(work/mut-*/); fi
 viewports=375x812,768x1024,1440x900
 bin=../target/release/cssdiff
 $bin --list-properties > work/properties.txt
@@ -15,8 +19,8 @@ if [[ ! -f work/noise.json ]]; then
 fi
 
 now() { date +%s.%N; }
-printf 'mutation\tkind\tcssdiff_s\tchrome_s\tverdict\tchrome\tcssdiff\tboth\n' > work/results.tsv
-for dir in work/mut-*/; do
+printf 'mutation\tkind\tcssdiff_s\tchrome_s\tverdict\tchrome\tcssdiff\tboth\n' > "$results"
+for dir in "${dirs[@]}"; do
   m=$(basename "$dir")
   t0=$(now)
   set +e; $bin --json -b "$base" -v $viewports "$site" "$dir" > "work/$m.cssdiff.json" 2>/dev/null; code=$?; set -e
@@ -28,5 +32,5 @@ for dir in work/mut-*/; do
   rm "work/$m.chrome.json"
   kind=$(python3 -I -c "import json,sys;print(next(x['kind'] for x in json.load(open('work/mutations.json')) if x['name']=='$m'))")
   read -r verdict c o b <<<"$(echo "$line" | sed -E 's/ +/ /g; s/chrome=|cssdiff=|both=//g')"
-  printf '%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\n' "$m" "$kind" "$(echo "$t1-$t0" | bc)" "$(echo "$t2-$t1" | bc)" "$verdict" "$c" "$o" "$b" | tee -a work/results.tsv
+  printf '%s\t%s\t%.3f\t%.3f\t%s\t%s\t%s\t%s\n' "$m" "$kind" "$(echo "$t1-$t0" | bc)" "$(echo "$t2-$t1" | bc)" "$verdict" "$c" "$o" "$b" | tee -a "$results"
 done

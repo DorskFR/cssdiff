@@ -359,7 +359,10 @@ fn grid_properties_are_compared() {
     );
     let c = changes(&run);
     assert_eq!(c.len(), 1, "{c:?}");
-    assert_eq!((c[0].1.as_str(), c[0].4.clone()), ("grid-template-columns", vec!["768x1024".to_string()]));
+    assert_eq!(
+        (c[0].1.as_str(), c[0].4.clone()),
+        ("grid-template-columns", vec!["768x1024".to_string()])
+    );
 }
 
 #[test]
@@ -371,5 +374,8 @@ fn changes_are_reported_in_document_order() {
         &["-p", "color,padding-top"],
     );
     let elements: Vec<_> = changes(&run).into_iter().map(|c| c.0).collect();
-    assert_eq!(elements, vec!["html > body > main.m", "html > body > main.m > p.p"]);
+    assert_eq!(
+        elements,
+        vec!["html > body > main.m", "html > body > main.m > p.p"]
+    );
 }

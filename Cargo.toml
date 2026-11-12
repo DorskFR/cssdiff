@@ -26,3 +26,8 @@ tempfile = "3.27.0"
 [profile.release]
 lto = true
 strip = true
+
+# blitz-dom's resolve_undisplayed_style drops a Stylo task list after leaving
+# the LAYOUT thread state, which trips this Stylo debug assertion.
+[profile.dev.package.stylo]
+debug-assertions = false

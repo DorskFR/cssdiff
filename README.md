@@ -66,7 +66,7 @@ cssdiff --mode used before/ after/
 |---|---|---|
 | `-v, --viewport` | `375x812,768x1024,1440x900` | Viewports compared |
 | `-b, --base` | none | URL prefix stripped from root-relative links |
-| `-p, --property` / `-i, --ignore` | all 252 physical longhands | Properties compared |
+| `-p, --property` / `-i, --ignore` | all 249 physical longhands | Properties compared |
 | `-m, --mode` | `computed` | `computed` or `used` values |
 | `-j, --jobs` | CPU count | Pages processed in parallel |
 
@@ -76,7 +76,7 @@ The full list is in `cssdiff --help`.
 
 Each page is parsed into Blitz's headless DOM. `<link>` and `@import` load from disk. Stylo computes the cascade per viewport: specificity, `!important`, `@layer`, `@media`, `@supports`, custom properties, inheritance, `::before` and `::after`. Elements pair by structural path (`/html[1]/body[1]/main[1]`), not class names, so renamed classes with unchanged styles produce no diff.
 
-Against Chrome's `getComputedStyle()` on 24 random edits to a real 28-page site, cssdiff found <!-- RECALL --> of the changes Chrome found, with no false positives, in 0.4 s against Chrome's 50 s: [docs/benchmark.md](docs/benchmark.md).
+On 24 random CSS edits to a real 28-page site, cssdiff found all 549 non-layout computed-style changes Chrome's `getComputedStyle()` found, and none it did not, in 0.42 s per comparison against 71 s per version for Chrome: [docs/benchmark.md](docs/benchmark.md).
 
 ## Limitations
 
