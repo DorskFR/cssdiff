@@ -1,5 +1,5 @@
 FROM rust:1.99.1-alpine AS build
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev python3
 WORKDIR /app
 COPY . .
 RUN cargo build --release
