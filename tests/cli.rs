@@ -618,3 +618,37 @@ fn servers_need_routes_and_do_not_mix_with_files() {
     let unreachable = cssdiff_urls("http://127.0.0.1:9", &a, &["--routes", "/"]);
     assert_eq!(unreachable.code, 2, "{}", unreachable.stderr);
 }
+
+#[test]
+fn urls_are_compared_without_the_server_origin() {
+    let html = r#"<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><p class=a>x</p><p class=b>y</p></body></html>"#;
+    let css = ".a{background-image:url(/assets/a.svg)}.b{mask-image:url(b.svg)}";
+    let (_tmp, b, a) = two_servers(
+        &[("index.html", html), ("assets/app.css", css)],
+        &[
+            ("index.html", html),
+            ("assets/app.css", &css.replace("b.svg", "c.svg")),
+        ],
+    );
+    let props = ["-p", "background-image,mask-image", "-v", "1000x800"];
+    let same = cssdiff_urls(
+        &b,
+        &b.replace("127.0.0.1", "localhost"),
+        &[&props[..], &["--routes", "/"]].concat(),
+    );
+    assert_eq!(same.code, 0, "{}", same.report);
+
+    let run = cssdiff_urls(&b, &a, &[&props[..], &["--routes", "/"]].concat());
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert_eq!(
+        changes(&run)
+            .into_iter()
+            .map(|(_, p, before, after, _)| (p, before, after))
+            .collect::<Vec<_>>(),
+        vec![(
+            "mask-image".to_string(),
+            r#"url("/assets/b.svg")"#.to_string(),
+            r#"url("/assets/c.svg")"#.to_string(),
+        )]
+    );
+}

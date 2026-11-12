@@ -90,6 +90,8 @@ pub struct Page {
     pub doc: BaseDocument,
     /// HTTP status of the page, for pages served over HTTP.
     pub status: Option<u16>,
+    /// `url("<origin>/`, rewritten to `url("/` so both servers compare equal.
+    origin_url: Option<String>,
     pub warnings: Vec<String>,
     fetch_warnings: Arc<std::sync::Mutex<Vec<String>>>,
 }
@@ -133,6 +135,7 @@ impl Page {
             Arc::new(provider),
             fetch_warnings,
             None,
+            None,
         ))
     }
 
@@ -150,6 +153,7 @@ impl Page {
             Arc::new(provider),
             fetch_warnings,
             Some(status),
+            Some(format!("url(\"{}/", origin.origin().ascii_serialization())),
         ))
     }
 
@@ -159,6 +163,7 @@ impl Page {
         provider: Arc<dyn blitz_traits::net::NetProvider>,
         fetch_warnings: Arc<std::sync::Mutex<Vec<String>>>,
         status: Option<u16>,
+        origin_url: Option<String>,
     ) -> Page {
         let config = DocumentConfig {
             base_url: Some(base_url),
@@ -169,6 +174,7 @@ impl Page {
         Page {
             doc,
             status,
+            origin_url,
             warnings: Vec::new(),
             fetch_warnings,
         }
@@ -228,7 +234,16 @@ impl Page {
 
     /// The value `getComputedStyle()` would return, using layout for used values.
     pub fn used(&self, node: NodeId, property: Property) -> String {
-        self.doc.resolved_style_value(node, property.name)
+        self.strip_origin(self.doc.resolved_style_value(node, property.name))
+    }
+
+    pub fn strip_origin(&self, value: String) -> String {
+        match &self.origin_url {
+            Some(prefix) if value.contains(prefix.as_str()) => {
+                value.replace(prefix.as_str(), "url(\"/")
+            }
+            _ => value,
+        }
     }
 }
 
