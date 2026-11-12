@@ -28,7 +28,7 @@ jobs:
             os: ubuntu-24.04-arm
             name: cssdiff-linux-arm64
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             name: cssdiff-darwin-arm64
     runs-on: ${{ matrix.os }}
     steps:
