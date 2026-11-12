@@ -9,7 +9,7 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use style::properties::ComputedValues;
 use style::servo_arc::Arc as ServoArc;
 
-use crate::net::FileNetProvider;
+use crate::net::{self, FileNetProvider, HttpNetProvider};
 use crate::property::Property;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,8 +72,24 @@ impl State {
     }
 }
 
+/// Where pages and their stylesheets come from.
+pub enum Source {
+    /// A built site on disk; `base` is the URL prefix it is served under.
+    Dir {
+        root: std::path::PathBuf,
+        base: String,
+    },
+    /// A running server; pages are routes relative to `origin`.
+    Http {
+        origin: url::Url,
+        agent: ureq::Agent,
+    },
+}
+
 pub struct Page {
     pub doc: BaseDocument,
+    /// HTTP status of the page, for pages served over HTTP.
+    pub status: Option<u16>,
     pub warnings: Vec<String>,
     fetch_warnings: Arc<std::sync::Mutex<Vec<String>>>,
 }
@@ -89,8 +105,15 @@ pub struct Entry {
 }
 
 impl Page {
-    /// Parse `root/relative` with `root` acting as the site root for `/…` URLs.
-    pub fn load(root: &Path, base: &str, relative: &Path) -> Result<Page> {
+    /// Load the page at `relative` (a file path or a route) from `source`.
+    pub fn load(source: &Source, relative: &Path) -> Result<Page> {
+        match source {
+            Source::Dir { root, base } => Self::load_file(root, base, relative),
+            Source::Http { origin, agent } => Self::load_http(origin, agent, relative),
+        }
+    }
+
+    fn load_file(root: &Path, base: &str, relative: &Path) -> Result<Page> {
         let path = root.join(relative);
         let html = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
@@ -99,21 +122,56 @@ impl Page {
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
         let (provider, fetch_warnings) = FileNetProvider::new(root.to_path_buf(), base);
+        let base_url = format!(
+            "file://{}/{}",
+            base.trim_end_matches('/'),
+            url_path.join("/")
+        );
+        Ok(Self::parse(
+            &html,
+            base_url,
+            Arc::new(provider),
+            fetch_warnings,
+            None,
+        ))
+    }
+
+    fn load_http(origin: &url::Url, agent: &ureq::Agent, route: &Path) -> Result<Page> {
+        let url = origin
+            .join(&route.to_string_lossy())
+            .with_context(|| format!("invalid route {}", route.display()))?;
+        let (status, body, final_url) =
+            net::get(agent, url.as_str()).map_err(anyhow::Error::msg)?;
+        let html = String::from_utf8_lossy(&body);
+        let (provider, fetch_warnings) = HttpNetProvider::new(agent.clone());
+        Ok(Self::parse(
+            &html,
+            final_url,
+            Arc::new(provider),
+            fetch_warnings,
+            Some(status),
+        ))
+    }
+
+    fn parse(
+        html: &str,
+        base_url: String,
+        provider: Arc<dyn blitz_traits::net::NetProvider>,
+        fetch_warnings: Arc<std::sync::Mutex<Vec<String>>>,
+        status: Option<u16>,
+    ) -> Page {
         let config = DocumentConfig {
-            base_url: Some(format!(
-                "file://{}/{}",
-                base.trim_end_matches('/'),
-                url_path.join("/")
-            )),
-            net_provider: Some(Arc::new(provider)),
+            base_url: Some(base_url),
+            net_provider: Some(provider),
             ..Default::default()
         };
-        let doc = HtmlDocument::from_html(&html, config).into_inner();
-        Ok(Page {
+        let doc = HtmlDocument::from_html(html, config).into_inner();
+        Page {
             doc,
+            status,
             warnings: Vec::new(),
             fetch_warnings,
-        })
+        }
     }
 
     pub fn resolve_at(&mut self, size: Size) {

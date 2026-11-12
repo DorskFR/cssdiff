@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use cssdiff::page::{Page, Size};
+use cssdiff::page::{Page, Size, Source};
 use cssdiff::property;
 use style::properties::PropertyDeclarationId;
 
@@ -17,10 +17,14 @@ fn main() -> anyhow::Result<()> {
     let root = Path::new(&args[0]);
     let viewports: Vec<Size> = args[2].split(',').map(|v| v.parse().unwrap()).collect();
     let plan = cssdiff::site::plan(root, root)?;
+    let source = Source::Dir {
+        root: root.to_path_buf(),
+        base: args[1].clone(),
+    };
     let properties = property::all();
     let mut out: BTreeMap<String, BTreeMap<String, Elements>> = BTreeMap::new();
     for (rel, _) in &plan.pairs {
-        let mut page = Page::load(root, &args[1], rel)?;
+        let mut page = Page::load(&source, rel)?;
         for &size in &viewports {
             page.resolve_at(size);
             let mut elements = BTreeMap::new();

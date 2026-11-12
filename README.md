@@ -8,12 +8,13 @@ Diff the computed CSS styles of every element of two versions of a site, at ever
 
 ![cssdiff finding no change in a CSS refactor, then a moved breakpoint and a lost border color](docs/assets/demo.gif)
 
-Takes two builds of a static site, resolves the full cascade of every page with Firefox's CSS engine ([Stylo](https://github.com/servo/stylo), through [Blitz](https://github.com/DioxusLabs/blitz)) and reports every element whose computed style changed, per viewport. A CSS regression check for CI with no Chromium, no screenshots and no pixel thresholds: one static binary.
+Takes two builds of a static site, or two running servers, resolves the full cascade of every page with Firefox's CSS engine ([Stylo](https://github.com/servo/stylo), through [Blitz](https://github.com/DioxusLabs/blitz)) and reports every element whose computed style changed, per viewport. A CSS regression check for CI with no Chromium, no screenshots and no pixel thresholds: one static binary.
 
 ```sh
 cssdiff main/dist branch/dist                 # every page, three default viewports
 cssdiff -v 390x844,1280x800 a.html b.html     # two files, custom viewports
 cssdiff -b /docs --json old/ new/             # site served under /docs, JSON report
+cssdiff -r routes.txt http://localhost:3001 http://localhost:3002   # server-rendered site
 ```
 
 ## Install
@@ -52,6 +53,18 @@ Exit status: `0` identical, `1` differences, `2` error.
 - run: cssdiff base/dist dist
 ```
 
+### Compare a server-rendered site
+
+Sites rendered per request (Next.js, Remix, Rails) have no HTML on disk. Run both production servers and pass the routes:
+
+```sh
+(cd main && next build && next start -p 3001) &
+(cd branch && next build && next start -p 3002) &
+cssdiff --routes /,/pricing,/blog/hello http://localhost:3001 http://localhost:3002
+```
+
+`--routes` takes `/path` values or a file of routes, one per line. An HTTP status change counts as a difference. Stub backend APIs with fixtures so both servers render the same data, fast.
+
 ### Compare layout values too
 
 ```sh
@@ -74,6 +87,8 @@ Each flag adds a pass with that state forced on every element at once. Changes t
 |---|---|---|
 | `-v, --viewport` | `375x812,768x1024,1440x900` | Viewports compared |
 | `-b, --base` | none | URL prefix stripped from root-relative links |
+| `-r, --routes` | none | Routes fetched from two `http://` servers |
+| `--timeout` | `30` | Seconds allowed per HTTP request |
 | `-p, --property` / `-i, --ignore` | all 249 physical longhands | Properties compared |
 | `-m, --mode` | `computed` | `computed` or `used` values |
 | `--hover`, `--focus`, `--active` | off | Also compare with that state forced on every element |
@@ -89,7 +104,8 @@ On 24 random CSS edits to a real 28-page site, cssdiff found all 549 non-layout 
 
 ## Limitations
 
-- No JavaScript runs. Client-rendered pages need a pre-rendered build (SSR or static export).
+- No JavaScript runs. Client-rendered pages need a pre-rendered build or a server render.
+- Servers are fetched over `http://` only, without compression.
 - States are forced on every element at once: `:not(:hover)` never matches, and competing state rules on nested elements can mask each other.
 - `:focus-visible` and `:focus-within` never match.
 - Values follow Firefox's engine; a feature Stylo lacks is invisible on both sides.

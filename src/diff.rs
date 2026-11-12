@@ -5,7 +5,7 @@ use std::rc::Rc;
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::page::{Page, Size, State};
+use crate::page::{Page, Size, Source, State};
 use crate::property::{Mode, Property};
 use blitz_dom::NodeId;
 use style::properties::{ComputedValues, PropertyDeclarationId};
@@ -41,6 +41,8 @@ pub struct Unmatched {
 
 #[derive(Debug, Default, Serialize)]
 pub struct PageDiff {
+    /// `(before, after)` HTTP status, when it changed.
+    pub status: Option<(u16, u16)>,
     pub changes: Vec<Change>,
     pub unmatched: Vec<Unmatched>,
     pub warnings: Vec<String>,
@@ -49,15 +51,13 @@ pub struct PageDiff {
 
 impl PageDiff {
     pub fn is_empty(&self) -> bool {
-        self.changes.is_empty() && self.unmatched.is_empty()
+        self.status.is_none() && self.changes.is_empty() && self.unmatched.is_empty()
     }
 }
 
 pub struct Sources<'a> {
-    pub before_root: &'a Path,
-    pub after_root: &'a Path,
-    /// URL path prefix the site is served under, e.g. `/docs`.
-    pub base: &'a str,
+    pub before: &'a Source,
+    pub after: &'a Source,
 }
 
 pub fn diff_page(
@@ -69,9 +69,15 @@ pub fn diff_page(
     mode: Mode,
     states: &[State],
 ) -> Result<PageDiff> {
-    let mut before = Page::load(sources.before_root, sources.base, before_rel)?;
-    let mut after = Page::load(sources.after_root, sources.base, after_rel)?;
-    let mut out = PageDiff::default();
+    let mut before = Page::load(sources.before, before_rel)?;
+    let mut after = Page::load(sources.after, after_rel)?;
+    let mut out = PageDiff {
+        status: match (before.status, after.status) {
+            (Some(b), Some(a)) if b != a => Some((b, a)),
+            _ => None,
+        },
+        ..Default::default()
+    };
 
     let passes: Vec<(Size, Option<State>)> = viewports
         .iter()

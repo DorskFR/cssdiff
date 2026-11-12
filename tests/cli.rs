@@ -460,3 +460,161 @@ fn changes_without_a_state_are_not_repeated_under_one() {
         )]
     );
 }
+
+/// Serves `root` over HTTP until the test process exits: `/x` maps to
+/// `x`, `x.html` or `x/index.html`; anything else is a 404.
+fn serve(root: &Path) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let root = root.to_path_buf();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            loop {
+                let mut header = String::new();
+                if reader.read_line(&mut header).unwrap() == 0 || header == "\r\n" {
+                    break;
+                }
+            }
+            let path = line
+                .split(' ')
+                .nth(1)
+                .unwrap_or("/")
+                .trim_start_matches('/');
+            let found = [
+                root.join(path),
+                root.join(format!("{path}.html")),
+                root.join(path).join("index.html"),
+            ]
+            .into_iter()
+            .find(|p| p.is_file());
+            let (status, body) = match found {
+                Some(p) => ("200 OK", std::fs::read(p).unwrap()),
+                None => ("404 Not Found", b"<!doctype html><p>missing</p>".to_vec()),
+            };
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(&body).unwrap();
+        }
+    });
+    format!("http://{addr}")
+}
+
+fn cssdiff_urls(before: &str, after: &str, args: &[&str]) -> Run {
+    let out = Command::new(env!("CARGO_BIN_EXE_cssdiff"))
+        .args(args)
+        .arg("--json")
+        .arg(before)
+        .arg(after)
+        .output()
+        .unwrap();
+    Run {
+        code: out.status.code().unwrap(),
+        report: serde_json::from_str(&String::from_utf8(out.stdout).unwrap())
+            .unwrap_or(Value::Null),
+        stderr: String::from_utf8(out.stderr).unwrap(),
+    }
+}
+
+fn two_servers(
+    before: &[(&str, &str)],
+    after: &[(&str, &str)],
+) -> (tempfile::TempDir, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let (b, a) = (tmp.path().join("before"), tmp.path().join("after"));
+    site(&b, before);
+    site(&a, after);
+    let (bu, au) = (serve(&b), serve(&a));
+    (tmp, bu, au)
+}
+
+#[test]
+fn servers_are_compared_route_by_route() {
+    let html = r#"<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><p class=a>x</p></body></html>"#;
+    let (_tmp, b, a) = two_servers(
+        &[
+            ("index.html", html),
+            ("docs/index.html", html),
+            ("assets/app.css", ".a{color:red}"),
+        ],
+        &[
+            ("index.html", html),
+            ("docs/index.html", html),
+            ("assets/app.css", ".a{color:blue}"),
+        ],
+    );
+    let run = cssdiff_urls(
+        &b,
+        &a,
+        &["-p", "color", "-v", "1000x800", "--routes", "/,/docs"],
+    );
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    let pages: Vec<_> = run.report["pages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["page"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(pages, vec!["/", "/docs"]);
+    assert_eq!(changes(&run).len(), 2);
+    assert!(
+        run.stderr.is_empty() || !run.stderr.contains("warning"),
+        "{}",
+        run.stderr
+    );
+
+    let same = cssdiff_urls(&b, &b, &["--routes", "/,/docs"]);
+    assert_eq!(same.code, 0, "{}", same.stderr);
+}
+
+#[test]
+fn http_status_changes_are_differences() {
+    let html = "<!doctype html><p>x</p>";
+    let (_tmp, b, a) = two_servers(&[("gone.html", html)], &[("index.html", html)]);
+    let run = cssdiff_urls(&b, &a, &["--routes", "/gone"]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert_eq!(
+        run.report["pages"][0]["status"],
+        serde_json::json!([200, 404])
+    );
+}
+
+#[test]
+fn routes_files_are_read() {
+    let html = "<!doctype html><p>x</p>";
+    let (tmp, b, a) = two_servers(
+        &[("index.html", html), ("x.html", html)],
+        &[("index.html", html), ("x.html", html)],
+    );
+    let list = tmp.path().join("routes.txt");
+    std::fs::write(&list, "# pages\n/\n\n/x  # second\n").unwrap();
+    let run = cssdiff_urls(&b, &a, &["--routes", list.to_str().unwrap()]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.report["pages"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn servers_need_routes_and_do_not_mix_with_files() {
+    let (_tmp, b, a) = two_servers(&[("index.html", "<p>x</p>")], &[("index.html", "<p>x</p>")]);
+    let no_routes = cssdiff_urls(&b, &a, &[]);
+    assert_eq!(no_routes.code, 2);
+    assert!(
+        no_routes.stderr.contains("--routes"),
+        "{}",
+        no_routes.stderr
+    );
+
+    let mixed = cssdiff_urls(&b, "/tmp", &["--routes", "/"]);
+    assert_eq!(mixed.code, 2);
+
+    let unreachable = cssdiff_urls("http://127.0.0.1:9", &a, &["--routes", "/"]);
+    assert_eq!(unreachable.code, 2, "{}", unreachable.stderr);
+}

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 
 use cssdiff::diff::{Sources, diff_page};
+use cssdiff::page::Source;
 use cssdiff::report::{PageReport, Report};
 use cssdiff::{Mode, Size, State, property, site};
 
@@ -18,12 +19,19 @@ use cssdiff::{Mode, Size, State, property, site};
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
-    /// HTML file or directory of the reference version
+    /// HTML file, directory or `http://` server of the reference version
     #[arg(required_unless_present = "list_properties")]
-    before: Option<PathBuf>,
-    /// HTML file or directory of the changed version
+    before: Option<String>,
+    /// HTML file, directory or `http://` server of the changed version
     #[arg(required_unless_present = "list_properties")]
-    after: Option<PathBuf>,
+    after: Option<String>,
+    /// Routes to fetch from both servers: `/path` values, or files listing one
+    /// route per line (repeatable or comma separated)
+    #[arg(short, long, value_delimiter = ',')]
+    routes: Vec<String>,
+    /// Seconds allowed per HTTP request
+    #[arg(long, default_value_t = 30)]
+    timeout: u64,
     /// Print the compared properties, one per line, and exit
     #[arg(long)]
     list_properties: bool,
@@ -63,6 +71,18 @@ struct Cli {
     /// Pages processed in parallel (default: number of CPUs)
     #[arg(short, long)]
     jobs: Option<usize>,
+}
+
+/// `Some(origin)` when `arg` is a server URL.
+fn server(arg: &str) -> Result<Option<url::Url>> {
+    if arg.starts_with("https://") {
+        bail!("https is not supported: point cssdiff at the server's http:// address");
+    }
+    if !arg.starts_with("http://") {
+        return Ok(None);
+    }
+    let url = url::Url::parse(arg).map_err(|e| anyhow::anyhow!("invalid URL {arg}: {e}"))?;
+    Ok(Some(url))
 }
 
 fn main() -> ExitCode {
@@ -108,11 +128,39 @@ fn run(cli: Cli) -> Result<bool> {
     .filter_map(|(on, state)| on.then_some(state))
     .collect();
 
-    let plan = site::plan(before, after)?;
+    let (plan, before, after) = match (server(before)?, server(after)?) {
+        (Some(b), Some(a)) => {
+            let routes = site::routes(&cli.routes)?;
+            if routes.is_empty() {
+                bail!("comparing servers needs --routes");
+            }
+            let agent = cssdiff::net::agent(std::time::Duration::from_secs(cli.timeout));
+            (
+                site::plan_routes(&routes),
+                Source::Http {
+                    origin: b,
+                    agent: agent.clone(),
+                },
+                Source::Http { origin: a, agent },
+            )
+        }
+        (None, None) => {
+            if !cli.routes.is_empty() {
+                bail!("--routes only applies to http:// servers");
+            }
+            let plan = site::plan(Path::new(before), Path::new(after))?;
+            let dir = |root: &PathBuf| Source::Dir {
+                root: root.clone(),
+                base: cli.base.clone(),
+            };
+            let (b, a) = (dir(&plan.before_root), dir(&plan.after_root));
+            (plan, b, a)
+        }
+        _ => bail!("compare two servers, or two local files or directories"),
+    };
     let sources = Sources {
-        before_root: &plan.before_root,
-        after_root: &plan.after_root,
-        base: &cli.base,
+        before: &before,
+        after: &after,
     };
     let jobs = cli
         .jobs
