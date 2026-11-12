@@ -18,6 +18,7 @@ pub struct Property {
 /// Every physical CSS longhand exposed by `getComputedStyle()`. Logical
 /// longhands (`inline-size`, `margin-block-start`…) are left out: they always
 /// resolve to the physical longhand they map to, so they only duplicate it.
+/// Gecko-internal properties (`-moz-*`, `-x-*`) are left out too.
 pub fn all() -> Vec<Property> {
     // Blitz enables Stylo prefs (grid, columns, writing-mode…) when it creates
     // a document; properties behind them are unknown until then.
@@ -26,6 +27,7 @@ pub fn all() -> Vec<Property> {
     ));
     blitz_dom::resolved_style_property_names()
         .iter()
+        .filter(|name| !name.starts_with("-moz-") && !name.starts_with("-x-"))
         .filter_map(|&name| {
             let id = PropertyId::parse_enabled_for_all_content(name)
                 .ok()?
