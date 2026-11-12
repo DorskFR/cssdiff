@@ -63,7 +63,7 @@ Sites rendered per request (Next.js, Remix, Rails) have no HTML on disk. Run bot
 cssdiff --routes /,/pricing,/blog/hello http://localhost:3001 http://localhost:3002
 ```
 
-`--routes` takes `/path` values or a file of routes, one per line. An HTTP status change counts as a difference. Stub backend APIs with fixtures so both servers render the same data, fast.
+`--routes` takes `/path` values or a file of routes, one per line. An HTTP status change counts as a difference. `url()` values on the server itself are compared by path. Stub backend APIs with fixtures so both servers render the same data, fast.
 
 ### Compare layout values too
 

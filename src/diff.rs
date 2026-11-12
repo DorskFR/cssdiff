@@ -222,7 +222,11 @@ impl ValueCache {
         let values: Rc<Vec<String>> = Rc::new(
             properties
                 .iter()
-                .map(|p| styles.computed_value_to_string(PropertyDeclarationId::Longhand(p.id)))
+                .map(|p| {
+                    page.strip_origin(
+                        styles.computed_value_to_string(PropertyDeclarationId::Longhand(p.id)),
+                    )
+                })
                 .collect(),
         );
         self.by_style.insert(key, (styles, values.clone()));
