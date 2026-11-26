@@ -1,3 +1,5 @@
+<img src="docs/assets/icon.svg" width="64" height="64" alt="">
+
 # cssdiff
 
 Diff the computed CSS styles of every element of two versions of a site, at every viewport, without a browser.
